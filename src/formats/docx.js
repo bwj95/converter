@@ -21,9 +21,24 @@ function mimeForExt(name = '') {
   return 'image/jpeg';
 }
 
+function parseStylesMap(files) {
+  const map = new Map();
+  const stylesBytes = getZipEntry(files, 'word/styles.xml');
+  if (!stylesBytes) return map;
+  const xml = strFromU8(stylesBytes);
+  for (const st of findElements(xml, 'style')) {
+    const id = st.attrs['w:styleid'] || st.attrs.styleid;
+    if (!id) continue;
+    const nameMatch = st.inner.match(/<w:name\b[^>]*w:val=["']([^"']+)["']/i);
+    if (nameMatch) {
+      map.set(id.toLowerCase(), nameMatch[1].toLowerCase());
+    }
+  }
+  return map;
+}
+
 function parseRunsHtml(xml, relsMap) {
   let out = '';
-  // Match hyperlinks or standalone runs in order
   const tokenRe = /<w:hyperlink\b([^>]*)>([\s\S]*?)<\/w:hyperlink>|<w:r\b[^>]*>([\s\S]*?)<\/w:r>/gi;
   let m;
 
@@ -31,6 +46,11 @@ function parseRunsHtml(xml, relsMap) {
     const rPr = runInner.match(/<w:rPr\b[^>]*>([\s\S]*?)<\/w:rPr>/i)?.[1] || '';
     const isBold = /<w:b(?:\s+w:val="(?:true|1)"|\s*\/?>)/i.test(rPr) && !/<w:b\s+w:val="(?:false|0)"/i.test(rPr);
     const isItalic = /<w:i(?:\s+w:val="(?:true|1)"|\s*\/?>)/i.test(rPr) && !/<w:i\s+w:val="(?:false|0)"/i.test(rPr);
+    const isUnderline = /<w:u\b/i.test(rPr) && !/<w:u\b[^>]*w:val=["']none["']/i.test(rPr);
+    const colorMatch = rPr.match(/<w:color\b[^>]*w:val=["']([0-9a-fA-F]{6})["']/i);
+    const color = colorMatch && colorMatch[1].toLowerCase() !== '000000' && colorMatch[1].toLowerCase() !== 'auto'
+      ? `#${colorMatch[1]}`
+      : null;
 
     // Embedded image (<a:blip r:embed="rId..."/>)
     const blip = runInner.match(/<a:blip\b[^>]*r:embed=["']([^"']+)["']/i);
@@ -55,6 +75,8 @@ function parseRunsHtml(xml, relsMap) {
     }
     if (!text) return '';
     let html = escapeXml(text).replace(/\n/g, '<br/>');
+    if (color) html = `<span style="color:${color}">${html}</span>`;
+    if (isUnderline) html = `<u>${html}</u>`;
     if (isBold) html = `<strong>${html}</strong>`;
     if (isItalic) html = `<em>${html}</em>`;
     return html;
@@ -65,9 +87,8 @@ function parseRunsHtml(xml, relsMap) {
       const attrs = parseAttributes(m[1]);
       const rel = relsMap.get(attrs['r:id']);
       const innerRuns = m[2].replace(/<w:r\b[^>]*>([\s\S]*?)<\/w:r>/gi, (_, ri) => renderRun(ri));
-      // Strip unmatched xml around runs inside hyperlink
       const clean = innerRuns.replace(/<[^>]+>/g, (tag) =>
-        /^<\/?(strong|em|br|img)\b/i.test(tag) ? tag : ''
+        /^<\/?(strong|em|u|span|br|img)\b/i.test(tag) ? tag : ''
       );
       if (rel?.target) {
         out += `<a href="${escapeXml(rel.target)}">${clean}</a>`;
@@ -81,30 +102,46 @@ function parseRunsHtml(xml, relsMap) {
   return out;
 }
 
-function paragraphToBlock(pXml, relsMap) {
+function paragraphToBlock(pXml, relsMap, stylesMap) {
   const pPr = pXml.match(/<w:pPr\b[^>]*>([\s\S]*?)<\/w:pPr>/i)?.[1] || '';
-  const styleMatch = pPr.match(/<w:pStyle\b[^>]*w:val=["']([^"']+)["']/i);
-  const style = (styleMatch?.[1] || '').toLowerCase();
+  const styleId = (pPr.match(/<w:pStyle\b[^>]*w:val=["']([^"']+)["']/i)?.[1] || '').toLowerCase();
+  const styleName = stylesMap.get(styleId) || styleId;
   const isList = /<w:numPr\b/i.test(pPr);
+
+  const jcMatch = pPr.match(/<w:jc\b[^>]*w:val=["'](left|center|right|both|distribute)["']/i);
+  const align = jcMatch ? (jcMatch[1].toLowerCase() === 'both' ? 'justify' : jcMatch[1].toLowerCase()) : '';
+  const styleAttr = align && align !== 'left' ? ` style="text-align:${align}"` : '';
 
   const innerHtml = parseRunsHtml(pXml, relsMap).trim();
   if (!innerHtml) return null;
 
-  if (style === 'title') return { tag: 'h1', html: `<h1>${innerHtml}</h1>`, isHeading1: true, titleText: innerHtml.replace(/<[^>]+>/g, '') };
-  if (style === 'subtitle') return { tag: 'h2', html: `<h2>${innerHtml}</h2>` };
-  const hMatch = style.match(/^heading(\d)$/);
+  if (styleName === 'title') {
+    return { tag: 'h1', html: `<h1${styleAttr}>${innerHtml}</h1>` };
+  }
+  if (styleName === 'subtitle') {
+    return { tag: 'h2', html: `<h2${styleAttr}>${innerHtml}</h2>` };
+  }
+  const hMatch = styleName.match(/^heading\s*(\d)$/);
   if (hMatch) {
     const lvl = Math.min(6, Math.max(1, Number(hMatch[1])));
-    return {
-      tag: `h${lvl}`,
-      html: `<h${lvl}>${innerHtml}</h${lvl}>`,
-      isHeading1: lvl === 1,
-      titleText: innerHtml.replace(/<[^>]+>/g, ''),
-    };
+    return { tag: `h${lvl}`, html: `<h${lvl}${styleAttr}>${innerHtml}</h${lvl}>` };
   }
-  if (style.includes('quote')) return { tag: 'blockquote', html: `<blockquote><p>${innerHtml}</p></blockquote>` };
-  if (isList) return { tag: 'li', html: `<li>${innerHtml}</li>` };
-  return { tag: 'p', html: `<p>${innerHtml}</p>` };
+
+  // Heuristic: short bold paragraph with large explicit font size (>= 15pt / w:sz >= 30)
+  const szMatch = pXml.match(/<w:sz\b[^>]*w:val=["'](\d+)["']/i);
+  const plainLen = innerHtml.replace(/<[^>]+>/g, '').trim().length;
+  if (szMatch && Number(szMatch[1]) >= 30 && plainLen > 0 && plainLen < 120) {
+    const lvl = Number(szMatch[1]) >= 40 ? 1 : 2;
+    return { tag: `h${lvl}`, html: `<h${lvl}${styleAttr}>${innerHtml}</h${lvl}>` };
+  }
+
+  if (styleName.includes('quote')) {
+    return { tag: 'blockquote', html: `<blockquote${styleAttr}><p>${innerHtml}</p></blockquote>` };
+  }
+  if (isList) {
+    return { tag: 'li', html: `<li>${innerHtml}</li>` };
+  }
+  return { tag: 'p', html: `<p${styleAttr}>${innerHtml}</p>` };
 }
 
 function tableToHtml(tblXml, relsMap) {
@@ -115,13 +152,13 @@ function tableToHtml(tblXml, relsMap) {
       const ps = findElements(tc.inner, 'p')
         .map((p) => parseRunsHtml(p.inner, relsMap).trim())
         .filter(Boolean);
-      cells.push(ps.join(' '));
+      cells.push(`<td>${ps.join('<br/>')}</td>`);
     }
-    if (cells.some(Boolean)) {
-      rows.push(`<p>${cells.join(' | ')}</p>`);
+    if (cells.length) {
+      rows.push(`<tr>${cells.join('')}</tr>`);
     }
   }
-  return rows.join('\n');
+  return rows.length ? `<table>${rows.join('')}</table>` : '';
 }
 
 export async function parseDocx(bytes, filename = 'document.docx') {
@@ -131,6 +168,7 @@ export async function parseDocx(bytes, filename = 'document.docx') {
     throw new Error('Invalid DOCX: missing word/document.xml.');
   }
   const docXml = strFromU8(docBytes);
+  const stylesMap = parseStylesMap(files);
 
   // Metadata from docProps/core.xml
   let title = stripExtension(filename);
@@ -178,67 +216,38 @@ export async function parseDocx(bytes, filename = 'document.docx') {
   while ((tm = topRe.exec(bodyXml)) !== null) {
     if (tm[1] !== undefined) {
       const tblHtml = tableToHtml(tm[1], relsMap);
-      if (tblHtml) blocks.push({ tag: 'p', html: tblHtml });
+      if (tblHtml) blocks.push({ tag: 'table', html: tblHtml });
     } else if (tm[2] !== undefined) {
-      const b = paragraphToBlock(tm[2], relsMap);
+      const b = paragraphToBlock(tm[2], relsMap, stylesMap);
       if (b) blocks.push(b);
     }
   }
 
-  // Group consecutive <li> into <ul> and split chapters on Heading1
-  const chapters = [];
-  let curTitle = title;
-  let curHtml = [];
+  // Assemble HTML with proper <ul> wrapping
+  const htmlParts = [];
   let inList = false;
-
-  const closeList = () => {
-    if (inList) {
-      curHtml.push('</ul>');
-      inList = false;
-    }
-  };
-
-  const flushChapter = () => {
-    closeList();
-    const html = curHtml.join('\n').trim();
-    if (html) {
-      chapters.push({
-        id: `chapter-${chapters.length + 1}`,
-        title: curTitle,
-        html,
-      });
-    }
-    curHtml = [];
-  };
-
   for (const b of blocks) {
-    if (b.isHeading1 && curHtml.length > 0) {
-      flushChapter();
-      curTitle = b.titleText || `Chapter ${chapters.length + 1}`;
-    } else if (b.isHeading1 && chapters.length === 0 && curHtml.length === 0 && b.titleText) {
-      curTitle = b.titleText;
-    }
-
     if (b.tag === 'li') {
       if (!inList) {
-        curHtml.push('<ul>');
+        htmlParts.push('<ul>');
         inList = true;
       }
-      curHtml.push(b.html);
+      htmlParts.push(b.html);
     } else {
-      closeList();
-      curHtml.push(b.html);
+      if (inList) {
+        htmlParts.push('</ul>');
+        inList = false;
+      }
+      htmlParts.push(b.html);
     }
   }
-  flushChapter();
+  if (inList) htmlParts.push('</ul>');
 
-  if (chapters.length === 0) {
-    chapters.push({ id: 'chapter-1', title, html: '<p></p>' });
-  }
+  const fullHtml = htmlParts.join('\n').trim() || '<p></p>';
 
   return createBook({
-    metadata: { title, author, language },
-    chapters,
+    metadata: { title, author, language, isDocument: true },
+    chapters: [{ id: 'chapter-1', title, html: fullHtml }],
     images,
   });
 }
