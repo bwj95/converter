@@ -18,6 +18,11 @@
         </div>
       </div>
 
+      <nav class="mode-tabs" role="tablist" aria-label="Workspace mode">
+        <button class="mode-tab is-active" type="button" role="tab" aria-selected="true" data-main-tab="convert">Convert</button>
+        <button class="mode-tab" type="button" role="tab" aria-selected="false" data-main-tab="pdf">PDF Tools</button>
+      </nav>
+
       <div class="topbar__actions">
         <span class="badge badge--local" title="All parsing and generation runs locally in a Web Worker. Files never leave your device.">
           <span class="dot"></span> 100% Local · Zero Uploads
@@ -33,6 +38,7 @@
   </header>
 
   <main class="container">
+    <div class="tab-panel" data-main-panel="convert">
     <section id="dropZone" class="dropzone" tabindex="0" role="button" aria-label="Drop ebook or document files here, or click to browse">
       <input id="fileInput" type="file" multiple accept=".epub,.mobi,.prc,.azw,.pdf,.fb2,.html,.htm,.xhtml,.md,.markdown,.txt" hidden />
       <div class="dropzone__content">
@@ -120,6 +126,151 @@
       </p>
       <div class="format-pills" id="formatPills"></div>
     </section>
+    </div>
+
+    <!-- PDF Tools Panel -->
+    <div class="tab-panel" data-main-panel="pdf" hidden>
+      <div class="subtabs" role="tablist" aria-label="PDF Tools">
+        <button class="subtab is-active" type="button" role="tab" aria-selected="true" data-pdf-subtab="organize">
+          Merge &amp; Organize
+        </button>
+        <button class="subtab" type="button" role="tab" aria-selected="false" data-pdf-subtab="edit">
+          Edit &amp; Sign
+        </button>
+      </div>
+
+      <!-- Sub-tab 1: Merge & Organize -->
+      <section class="pdf-panel" data-pdf-panel="organize">
+        <div id="orgDrop" class="dropzone" tabindex="0" role="button" aria-label="Drop PDFs or images to merge and organize">
+          <input id="orgFileInput" type="file" multiple accept=".pdf,application/pdf,image/*" hidden />
+          <div class="dropzone__content">
+            <div class="dropzone__icon" aria-hidden="true">📄</div>
+            <h2 class="dropzone__title">Merge, split, reorder &amp; rotate PDFs</h2>
+            <p class="dropzone__hint">
+              Drop one or more <strong>PDF</strong> files or <strong>images</strong> (PNG, JPG, WebP). Drag pages to reorder.
+            </p>
+            <div class="dropzone__buttons">
+              <button id="orgBrowseBtn" class="btn btn--primary" type="button">Choose PDFs / Images</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="orgWork" class="pdf-work" hidden>
+          <div class="toolbar">
+            <div class="toolbar__group">
+              <button id="orgAddBtn" class="btn btn--secondary btn--sm" type="button">+ Add Files</button>
+              <button id="orgSelectAllBtn" class="btn btn--ghost btn--sm" type="button">Select All</button>
+              <button id="orgRotateSelBtn" class="btn btn--ghost btn--sm" type="button" data-needs-selection disabled>Rotate Selected</button>
+              <button id="orgDeleteSelBtn" class="btn btn--ghost btn--sm" type="button" data-needs-selection disabled>Delete Selected</button>
+              <button id="orgClearBtn" class="btn btn--ghost btn--sm" type="button">Clear</button>
+            </div>
+            <div class="toolbar__group">
+              <span id="orgCount" class="pdf-count">0 pages</span>
+            </div>
+          </div>
+
+          <div id="orgSources" class="source-chips"></div>
+          <ul id="orgGrid" class="page-grid" aria-live="polite"></ul>
+
+          <div class="toolbar pdf-export-bar">
+            <label class="field-inline">
+              <span>Output file</span>
+              <input id="orgFilename" class="input" type="text" value="merged.pdf" />
+            </label>
+            <div class="toolbar__group">
+              <button id="orgExtractBtn" class="btn btn--secondary btn--sm" type="button" data-needs-selection disabled>Extract Selected</button>
+              <button id="orgSplitBtn" class="btn btn--secondary btn--sm" type="button" data-needs-pages disabled>Split All (.zip)</button>
+              <button id="orgToEditorBtn" class="btn btn--secondary btn--sm" type="button" data-needs-pages disabled>Send to Edit &amp; Sign →</button>
+              <button id="orgExportBtn" class="btn btn--primary" type="button" data-needs-pages disabled>Download PDF</button>
+            </div>
+          </div>
+          <p id="orgStatus" class="pdf-status" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <!-- Sub-tab 2: Edit & Sign -->
+      <section class="pdf-panel" data-pdf-panel="edit" hidden>
+        <div id="edDrop" class="dropzone" tabindex="0" role="button" aria-label="Drop a PDF to edit, fill forms, or sign">
+          <input id="edFileInput" type="file" accept=".pdf,application/pdf" hidden />
+          <div class="dropzone__content">
+            <div class="dropzone__icon" aria-hidden="true">✍️</div>
+            <h2 class="dropzone__title">Edit, fill forms &amp; sign a PDF</h2>
+            <p class="dropzone__hint">
+              Add text, dates, checkmarks, whiteout boxes, highlights, or your signature — 100% locally.
+            </p>
+            <div class="dropzone__buttons">
+              <button id="edBrowseBtn" class="btn btn--primary" type="button">Choose PDF</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="edWork" class="pdf-work" hidden>
+          <div class="toolbar ed-toolbar">
+            <div class="toolbar__group">
+              <button class="btn btn--ghost btn--sm is-active" type="button" data-ed-tool="select">Select</button>
+              <button class="btn btn--ghost btn--sm" type="button" data-ed-tool="text">Text</button>
+              <button class="btn btn--ghost btn--sm" type="button" data-ed-tool="date">Date</button>
+              <button class="btn btn--ghost btn--sm" type="button" data-ed-tool="check">✓ Check</button>
+              <button class="btn btn--ghost btn--sm" type="button" data-ed-tool="whiteout">Whiteout</button>
+              <button class="btn btn--ghost btn--sm" type="button" data-ed-tool="highlight">Highlight</button>
+              <button class="btn btn--secondary btn--sm" type="button" data-ed-tool="sign">Sign</button>
+              <button id="edNewSigBtn" class="btn btn--ghost btn--sm" type="button" title="Draw, type, or upload a new signature">New Sig</button>
+              <span id="edSigChip" class="sig-chip" hidden></span>
+            </div>
+
+            <div class="toolbar__group">
+              <label class="field-inline">
+                <span>Color</span>
+                <input id="edColor" type="color" value="#111827" class="color-input" />
+              </label>
+              <select id="edFontFamily" class="select select--sm" aria-label="Font family">
+                <option value="sans" selected>Sans</option>
+                <option value="serif">Serif</option>
+                <option value="mono">Mono</option>
+              </select>
+              <select id="edFontSize" class="select select--sm" aria-label="Font size">
+                <option value="10">10pt</option>
+                <option value="12" selected>12pt</option>
+                <option value="14">14pt</option>
+                <option value="18">18pt</option>
+                <option value="24">24pt</option>
+              </select>
+              <select id="edZoom" class="select select--sm" aria-label="Zoom level">
+                <option value="fit" selected>Fit</option>
+                <option value="0.75">75%</option>
+                <option value="1">100%</option>
+                <option value="1.25">125%</option>
+                <option value="1.5">150%</option>
+              </select>
+              <button id="edUndoBtn" class="btn btn--ghost btn--sm" type="button" disabled>Undo</button>
+              <button id="edClearAnnBtn" class="btn btn--ghost btn--sm" type="button">Clear Edits</button>
+            </div>
+          </div>
+
+          <details id="edFormsBar" class="forms-drawer" hidden>
+            <summary>Detected PDF Form Fields (click to fill)</summary>
+            <div id="edFormsList" class="forms-grid"></div>
+            <label class="field field--checkbox">
+              <input id="edFlattenForms" type="checkbox" checked />
+              <span>Flatten form fields on export (locks values into PDF)</span>
+            </label>
+          </details>
+
+          <div id="edStage" class="ed-stage" data-tool="select"></div>
+
+          <div class="toolbar pdf-export-bar">
+            <label class="field-inline">
+              <span>Output file</span>
+              <input id="edFilename" class="input" type="text" value="signed.pdf" />
+            </label>
+            <div class="toolbar__group">
+              <p id="edStatus" class="pdf-status" aria-live="polite"></p>
+              <button id="edExportBtn" class="btn btn--primary" type="button">Download Signed PDF</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
   </main>
 
   <!-- Metadata & Chapter Inspector Modal -->
@@ -164,6 +315,61 @@
 
       <footer class="modal__footer">
         <button id="saveMetaBtn" class="btn btn--primary" type="button">Save Metadata</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <!-- Signature Pad Modal -->
+  <dialog id="sigModal" class="modal modal--sm">
+    <div class="modal__box">
+      <header class="modal__header">
+        <div>
+          <h2>Create Signature</h2>
+          <p class="modal__stats">Draw, type, or upload a PNG/JPG signature</p>
+        </div>
+        <button id="sigCloseBtn" class="btn btn--ghost" type="button" aria-label="Close">✕</button>
+      </header>
+
+      <div class="modal__body">
+        <div class="subtabs">
+          <button class="subtab is-active" type="button" data-sig-tab="draw">Draw</button>
+          <button class="subtab" type="button" data-sig-tab="type">Type</button>
+          <button class="subtab" type="button" data-sig-tab="upload">Upload</button>
+        </div>
+
+        <div class="sig-colors">
+          <span>Ink:</span>
+          <label><input type="radio" name="sigColor" value="#111827" checked /> Black</label>
+          <label><input type="radio" name="sigColor" value="#1d4ed8" /> Blue</label>
+          <label><input type="radio" name="sigColor" value="#0f172a" /> Navy</label>
+        </div>
+
+        <div data-sig-panel="draw">
+          <canvas id="sigDrawCanvas" class="sig-canvas" width="600" height="200"></canvas>
+        </div>
+
+        <div data-sig-panel="type" hidden>
+          <div class="sig-type-row">
+            <input id="sigTypeInput" class="input" type="text" placeholder="Type your full name" />
+            <select id="sigFontSelect" class="select">
+              <option value="Dancing Script">Dancing Script</option>
+              <option value="Great Vibes">Great Vibes</option>
+              <option value="Caveat">Caveat</option>
+            </select>
+          </div>
+          <canvas id="sigTypePreview" class="sig-canvas" width="600" height="160"></canvas>
+        </div>
+
+        <div data-sig-panel="upload" hidden>
+          <input id="sigUploadInput" type="file" accept="image/png,image/jpeg,image/webp" class="input" />
+          <div id="sigUploadPreview" class="sig-upload-preview"><span>No image selected</span></div>
+        </div>
+      </div>
+
+      <footer class="modal__footer">
+        <button id="sigClearBtn" class="btn btn--ghost" type="button">Clear</button>
+        <button id="sigCancelBtn" class="btn btn--secondary" type="button">Cancel</button>
+        <button id="sigApplyBtn" class="btn btn--primary" type="button">Use Signature</button>
       </footer>
     </div>
   </dialog>

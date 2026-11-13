@@ -1,6 +1,7 @@
 import { zipSync } from '../vendor/fflate.mjs';
 import { FORMATS, OUTPUT_FORMATS } from './core/registry.js';
 import { detectFormat } from './core/detect.js';
+import { initPdfTools } from './pdf-tools/index.js';
 
 const worker = new Worker(new URL('./worker/convert.worker.js', import.meta.url), {
   type: 'module',
@@ -478,3 +479,22 @@ saveMetaBtn.addEventListener('click', () => {
 
 initTheme();
 populateFormats();
+
+// Top-level mode tabs (Convert | PDF Tools)
+const mainTabs = [...document.querySelectorAll('[data-main-tab]')];
+const mainPanels = [...document.querySelectorAll('[data-main-panel]')];
+let pdfTools = null;
+
+function setMainTab(tab) {
+  mainTabs.forEach((b) => {
+    const active = b.dataset.mainTab === tab;
+    b.classList.toggle('is-active', active);
+    b.setAttribute('aria-selected', String(active));
+  });
+  mainPanels.forEach((p) => (p.hidden = p.dataset.mainPanel !== tab));
+  if (tab === 'pdf' && !pdfTools) {
+    pdfTools = initPdfTools();
+  }
+}
+
+mainTabs.forEach((b) => b.addEventListener('click', () => setMainTab(b.dataset.mainTab)));
