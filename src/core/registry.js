@@ -66,9 +66,19 @@ export const FORMATS = {
     write: true,
     description: 'Plain UTF-8 text',
   },
+  docx: {
+    id: 'docx',
+    label: 'DOCX',
+    ext: '.docx',
+    mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    read: true,
+    write: false,
+    description: 'Word document (converts to PDF, EPUB, etc.)',
+  },
 };
 
 export const INPUT_EXTENSIONS = [
+  '.docx',
   '.epub',
   '.mobi',
   '.prc',

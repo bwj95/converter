@@ -119,6 +119,7 @@ function defaultTargetFor(srcFormat) {
   if (srcFormat === 'epub') return 'mobi';
   if (srcFormat === 'mobi') return 'epub';
   if (srcFormat === 'pdf') return 'epub';
+  if (srcFormat === 'docx') return 'pdf';
   return 'epub';
 }
 

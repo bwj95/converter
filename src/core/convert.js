@@ -8,6 +8,7 @@ import { parseFb2, generateFb2 } from '../formats/fb2.js';
 import { parseHtml, generateHtml } from '../formats/html.js';
 import { parseMarkdown, generateMarkdown } from '../formats/markdown.js';
 import { parseTxt, generateTxt } from '../formats/txt.js';
+import { parseDocx } from '../formats/docx.js';
 
 const PARSERS = {
   epub: parseEpub,
@@ -17,6 +18,7 @@ const PARSERS = {
   html: parseHtml,
   md: parseMarkdown,
   txt: parseTxt,
+  docx: parseDocx,
 };
 
 const GENERATORS = {

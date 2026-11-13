@@ -18,8 +18,13 @@ export function detectFormat(bytes, filename = '') {
     }
   }
 
-  // 3. ZIP-based (EPUB): PK\x03\x04
+  // 3. ZIP-based (DOCX or EPUB): PK\x03\x04
   if (u8.length >= 4 && u8[0] === 0x50 && u8[1] === 0x4b && u8[2] === 0x03 && u8[3] === 0x04) {
+    if (filename.toLowerCase().endsWith('.docx')) return 'docx';
+    const zipText = new TextDecoder('ascii', { fatal: false }).decode(u8.slice(0, Math.min(u8.length, 4096)));
+    if (zipText.includes('word/document.xml') || zipText.includes('[Content_Types].xml')) {
+      return 'docx';
+    }
     return 'epub';
   }
 
@@ -34,6 +39,7 @@ export function detectFormat(bytes, filename = '') {
 
   // 5. Fallback to extension
   const lower = filename.toLowerCase();
+  if (lower.endsWith('.docx')) return 'docx';
   if (lower.endsWith('.epub')) return 'epub';
   if (lower.endsWith('.mobi') || lower.endsWith('.prc') || lower.endsWith('.azw')) return 'mobi';
   if (lower.endsWith('.pdf')) return 'pdf';
