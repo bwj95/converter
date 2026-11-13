@@ -39,6 +39,100 @@ function toWinAnsiSafe(str = '') {
     .replace(/[^\x20-\x7E\xA0-\xFF]/g, '?');
 }
 
+/**
+ * Light normalization used when real Unicode fonts are embedded: keep every
+ * printable glyph, just tidy no-break spaces and strip stray control chars.
+ */
+function normalizeUnicode(str = '') {
+  return String(str)
+    .replace(/\u00A0/g, ' ')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+}
+
+/**
+ * Active text preparer. Swapped per-document in generatePdf: normalizeUnicode
+ * when embedded Noto fonts load, toWinAnsiSafe when we fall back to standard-14.
+ * Safe as module state because the worker runs one generatePdf at a time.
+ */
+let textPrep = toWinAnsiSafe;
+
+// Embedded Unicode font files (Latin + Latin-ext, Greek, Cyrillic, punctuation,
+// symbols). Noto Sans Mono has no italics, so they map to the upright cuts.
+const UNICODE_FONTS = {
+  serif: {
+    regular: 'NotoSerif-Regular.ttf', bold: 'NotoSerif-Bold.ttf',
+    italic: 'NotoSerif-Italic.ttf', boldItalic: 'NotoSerif-BoldItalic.ttf',
+  },
+  sans: {
+    regular: 'NotoSans-Regular.ttf', bold: 'NotoSans-Bold.ttf',
+    italic: 'NotoSans-Italic.ttf', boldItalic: 'NotoSans-BoldItalic.ttf',
+  },
+  mono: {
+    regular: 'NotoSansMono-Regular.ttf', bold: 'NotoSansMono-Bold.ttf',
+    italic: 'NotoSansMono-Regular.ttf', boldItalic: 'NotoSansMono-Bold.ttf',
+  },
+};
+
+// Cache raw font bytes across conversions (embedding itself is per-document).
+const fontBytesCache = new Map();
+
+async function fetchFontBytes(file) {
+  let bytes = fontBytesCache.get(file);
+  if (!bytes) {
+    const url = new URL(`../../vendor/fonts/text/${file}`, import.meta.url).href;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Font ${file} failed to load (${res.status})`);
+    bytes = new Uint8Array(await res.arrayBuffer());
+    fontBytesCache.set(file, bytes);
+  }
+  return bytes;
+}
+
+/**
+ * Register fontkit and embed the selected family's four cuts as subsetted
+ * Unicode fonts. Throws if fontkit or any font file can't be loaded, so the
+ * caller can fall back to the WinAnsi standard-14 set.
+ */
+async function loadUnicodeFontSet(pdfDoc, family) {
+  const set = UNICODE_FONTS[family] || UNICODE_FONTS.serif;
+  const fk = await import('../../vendor/fontkit.mjs');
+  pdfDoc.registerFontkit(fk.default || fk);
+  const embed = async (file) => pdfDoc.embedFont(await fetchFontBytes(file), { subset: true });
+  const [regular, bold, italic, boldItalic] = await Promise.all([
+    embed(set.regular), embed(set.bold), embed(set.italic), embed(set.boldItalic),
+  ]);
+  return { regular, bold, italic, boldItalic, unicode: true };
+}
+
+/** Original standard-14 (WinAnsi) fonts — used only as an offline fallback. */
+async function loadStandardFontSet(pdfDoc, family) {
+  if (family === 'sans') {
+    return {
+      regular: await pdfDoc.embedFont(StandardFonts.Helvetica),
+      bold: await pdfDoc.embedFont(StandardFonts.HelveticaBold),
+      italic: await pdfDoc.embedFont(StandardFonts.HelveticaOblique),
+      boldItalic: await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique),
+      unicode: false,
+    };
+  }
+  if (family === 'mono') {
+    return {
+      regular: await pdfDoc.embedFont(StandardFonts.Courier),
+      bold: await pdfDoc.embedFont(StandardFonts.CourierBold),
+      italic: await pdfDoc.embedFont(StandardFonts.CourierOblique),
+      boldItalic: await pdfDoc.embedFont(StandardFonts.CourierBoldOblique),
+      unicode: false,
+    };
+  }
+  return {
+    regular: await pdfDoc.embedFont(StandardFonts.TimesRoman),
+    bold: await pdfDoc.embedFont(StandardFonts.TimesRomanBold),
+    italic: await pdfDoc.embedFont(StandardFonts.TimesRomanItalic),
+    boldItalic: await pdfDoc.embedFont(StandardFonts.TimesRomanBoldItalic),
+    unicode: false,
+  };
+}
+
 export async function parsePdf(bytes, filename = 'document.pdf', onProgress) {
   const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const inWorker = typeof window === 'undefined';
@@ -177,7 +271,7 @@ function hexToPdfColor(hex) {
 }
 
 function wrapText(text, font, size, maxWidth) {
-  const safe = toWinAnsiSafe(text);
+  const safe = textPrep(text);
   const words = safe.split(/\s+/).filter(Boolean);
   if (words.length === 0) return [''];
   const lines = [];
@@ -213,7 +307,7 @@ function wrapRichRuns(runs, fontSet, size, maxWidth, forceBold = false) {
           ? fontSet.italic
           : fontSet.regular;
     const color = hexToPdfColor(r.color);
-    const safe = toWinAnsiSafe(r.text || '');
+    const safe = textPrep(r.text || '');
     const parts = safe.split(/(\n|\s+)/);
     for (const p of parts) {
       if (!p) continue;
@@ -263,33 +357,24 @@ export async function generatePdf(book, options = {}, onProgress) {
   const isDoc = Boolean(book.metadata.isDocument);
 
   const pdfDoc = await PDFDocument.create();
-  pdfDoc.setTitle(toWinAnsiSafe(book.metadata.title || 'Untitled Book'));
-  pdfDoc.setAuthor(toWinAnsiSafe(book.metadata.author || 'Unknown Author'));
-  pdfDoc.setCreator('Converter (Browser Ebook Tool)');
 
+  // Prefer embedded Unicode (Noto) fonts so accented, Greek, Cyrillic and symbol
+  // text survives; fall back to the standard-14 WinAnsi fonts only if the font
+  // files or fontkit can't be loaded (e.g. fully offline). textPrep tracks which
+  // path won so text is sanitized appropriately.
   let fontSet;
-  if (family === 'sans') {
-    fontSet = {
-      regular: await pdfDoc.embedFont(StandardFonts.Helvetica),
-      bold: await pdfDoc.embedFont(StandardFonts.HelveticaBold),
-      italic: await pdfDoc.embedFont(StandardFonts.HelveticaOblique),
-      boldItalic: await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique),
-    };
-  } else if (family === 'mono') {
-    fontSet = {
-      regular: await pdfDoc.embedFont(StandardFonts.Courier),
-      bold: await pdfDoc.embedFont(StandardFonts.CourierBold),
-      italic: await pdfDoc.embedFont(StandardFonts.CourierOblique),
-      boldItalic: await pdfDoc.embedFont(StandardFonts.CourierBoldOblique),
-    };
-  } else {
-    fontSet = {
-      regular: await pdfDoc.embedFont(StandardFonts.TimesRoman),
-      bold: await pdfDoc.embedFont(StandardFonts.TimesRomanBold),
-      italic: await pdfDoc.embedFont(StandardFonts.TimesRomanItalic),
-      boldItalic: await pdfDoc.embedFont(StandardFonts.TimesRomanBoldItalic),
-    };
+  try {
+    fontSet = await loadUnicodeFontSet(pdfDoc, family);
+    textPrep = normalizeUnicode;
+  } catch (err) {
+    if (onProgress) onProgress(0, 'Unicode fonts unavailable — using built-in fonts');
+    fontSet = await loadStandardFontSet(pdfDoc, family);
+    textPrep = toWinAnsiSafe;
   }
+
+  pdfDoc.setTitle(textPrep(book.metadata.title || 'Untitled Book'));
+  pdfDoc.setAuthor(textPrep(book.metadata.author || 'Unknown Author'));
+  pdfDoc.setCreator('Converter (Browser Ebook Tool)');
 
   const [pageW, pageH] = pageDims;
   const contentW = pageW - margin * 2;
@@ -313,7 +398,7 @@ export async function generatePdf(book, options = {}, onProgress) {
       });
       ty -= baseSize * 2.5;
     }
-    const authorText = toWinAnsiSafe(book.metadata.author || '');
+    const authorText = textPrep(book.metadata.author || '');
     if (authorText && authorText !== 'Unknown Author') {
       const aw = fontSet.regular.widthOfTextAtSize(authorText, baseSize * 1.15);
       titlePage.drawText(authorText, {
