@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Converter — Browser Ebook &amp; Document Converter</title>
+  <meta name="description" content="Convert EPUB, MOBI, PDF, FB2, HTML, Markdown, and TXT directly in your browser. 100% local, open source, zero uploads." />
+  <link rel="stylesheet" href="styles/main.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar__inner">
+      <div class="brand">
+        <span class="brand__mark" aria-hidden="true">⇄</span>
+        <div>
+          <h1 class="brand__title">Converter</h1>
+          <p class="brand__sub">EPUB · MOBI · PDF · FB2 · HTML · MD · TXT</p>
+        </div>
+      </div>
+
+      <div class="topbar__actions">
+        <span class="badge badge--local" title="All parsing and generation runs locally in a Web Worker. Files never leave your device.">
+          <span class="dot"></span> 100% Local · Zero Uploads
+        </span>
+        <button id="themeToggle" class="btn btn--ghost" type="button" aria-label="Toggle color theme">
+          Theme
+        </button>
+        <a class="btn btn--ghost" href="https://github.com/bwj95/converter" target="_blank" rel="noopener noreferrer" id="githubLink">
+          GitHub
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section id="dropZone" class="dropzone" tabindex="0" role="button" aria-label="Drop ebook or document files here, or click to browse">
+      <input id="fileInput" type="file" multiple accept=".epub,.mobi,.prc,.azw,.pdf,.fb2,.html,.htm,.xhtml,.md,.markdown,.txt" hidden />
+      <div class="dropzone__content">
+        <div class="dropzone__icon" aria-hidden="true">📚</div>
+        <h2 class="dropzone__title">Drop books or documents here</h2>
+        <p class="dropzone__hint">
+          Supports <strong>EPUB</strong>, <strong>MOBI</strong>, <strong>PDF</strong>, <strong>FB2</strong>, <strong>HTML</strong>, <strong>Markdown</strong>, and <strong>TXT</strong> (DRM-free).
+        </p>
+        <div class="dropzone__buttons">
+          <button id="browseBtn" class="btn btn--primary" type="button">Choose Files</button>
+          <button id="sampleBtn" class="btn btn--secondary" type="button">Try Sample Book</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="workspace" class="workspace" hidden>
+      <div class="toolbar">
+        <div class="toolbar__group">
+          <label class="field-inline">
+            <span>Convert all to</span>
+            <select id="globalFormat" class="select"></select>
+          </label>
+          <button id="toggleOptionsBtn" class="btn btn--ghost" type="button" aria-expanded="false">
+            PDF &amp; Output Options
+          </button>
+        </div>
+
+        <div class="toolbar__group">
+          <button id="convertAllBtn" class="btn btn--primary" type="button">Convert All</button>
+          <button id="downloadZipBtn" class="btn btn--secondary" type="button" hidden>Download All (.zip)</button>
+          <button id="clearAllBtn" class="btn btn--ghost" type="button">Clear</button>
+        </div>
+      </div>
+
+      <div id="optionsPanel" class="options-panel" hidden>
+        <div class="options-grid">
+          <label class="field">
+            <span>PDF Page Size</span>
+            <select id="optPageSize" class="select">
+              <option value="trade" selected>6 × 9" Trade Paperback</option>
+              <option value="kindle">5 × 6.7" E-Reader</option>
+              <option value="a4">A4 (210 × 297 mm)</option>
+              <option value="letter">US Letter (8.5 × 11")</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>PDF Font</span>
+            <select id="optFontFamily" class="select">
+              <option value="serif" selected>Serif (Times)</option>
+              <option value="sans">Sans-Serif (Helvetica)</option>
+              <option value="mono">Monospace (Courier)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>PDF Font Size</span>
+            <select id="optFontSize" class="select">
+              <option value="10">10 pt</option>
+              <option value="11" selected>11 pt</option>
+              <option value="12">12 pt</option>
+              <option value="13">13 pt</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>PDF Margins</span>
+            <select id="optMargin" class="select">
+              <option value="compact">Compact (0.5")</option>
+              <option value="standard" selected>Standard (0.75")</option>
+              <option value="wide">Wide (1.0")</option>
+            </select>
+          </label>
+          <label class="field field--checkbox">
+            <input id="optPageNumbers" type="checkbox" checked />
+            <span>Include PDF page numbers</span>
+          </label>
+        </div>
+      </div>
+
+      <ul id="queueList" class="queue" aria-live="polite"></ul>
+    </section>
+
+    <section class="matrix-card">
+      <h3>Supported Conversions</h3>
+      <p class="matrix-card__sub">
+        Every format parses into a shared chapter &amp; metadata model in a background Web Worker, then renders cleanly to any target format.
+      </p>
+      <div class="format-pills" id="formatPills"></div>
+    </section>
+  </main>
+
+  <!-- Metadata & Chapter Inspector Modal -->
+  <dialog id="inspectorModal" class="modal">
+    <div class="modal__box">
+      <header class="modal__header">
+        <div>
+          <h2 id="modalTitle">Inspect &amp; Edit Book</h2>
+          <p id="modalStats" class="modal__stats"></p>
+        </div>
+        <button id="closeModalBtn" class="btn btn--ghost" type="button" aria-label="Close">✕</button>
+      </header>
+
+      <div class="modal__body">
+        <div class="meta-form">
+          <label class="field">
+            <span>Title</span>
+            <input id="metaTitle" class="input" type="text" />
+          </label>
+          <label class="field">
+            <span>Author</span>
+            <input id="metaAuthor" class="input" type="text" />
+          </label>
+          <label class="field">
+            <span>Language</span>
+            <input id="metaLang" class="input" type="text" placeholder="en" />
+          </label>
+          <label class="field">
+            <span>Publisher</span>
+            <input id="metaPublisher" class="input" type="text" />
+          </label>
+        </div>
+
+        <div class="preview-split">
+          <aside class="chapter-list">
+            <h4>Chapters</h4>
+            <ul id="chapterNav"></ul>
+          </aside>
+          <article id="chapterPreview" class="chapter-preview"></article>
+        </div>
+      </div>
+
+      <footer class="modal__footer">
+        <button id="saveMetaBtn" class="btn btn--primary" type="button">Save Metadata</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

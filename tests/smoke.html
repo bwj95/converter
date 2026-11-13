@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Converter Smoke Test</title></head>
+<body>
+<pre id="out">RUNNING...</pre>
+<script type="module">
+  import { convertBook } from '../src/core/convert.js';
+  import { detectFormat } from '../src/core/detect.js';
+
+  const out = document.getElementById('out');
+  const results = [];
+
+  async function test() {
+    const sampleMd = `---
+title: "Smoke Test Book"
+author: "Tester"
+language: "en"
+---
+
+# Chapter 1: Alpha
+
+Hello from the browser converter smoke test.
+
+# Chapter 2: Beta
+
+Second chapter paragraph with em-dash — and curly “quotes”.
+`;
+    const mdBytes = new TextEncoder().encode(sampleMd);
+
+    // 1. MD -> EPUB
+    const epubRes = await convertBook({
+      bytes: mdBytes,
+      filename: 'smoke.md',
+      targetFormat: 'epub',
+    });
+    results.push({
+      step: 'MD->EPUB',
+      detected: detectFormat(epubRes.outputBytes, epubRes.outputName),
+      bytes: epubRes.outputBytes.length,
+      chapters: epubRes.stats.chapters,
+    });
+
+    // 2. EPUB -> MOBI
+    const mobiRes = await convertBook({
+      bytes: epubRes.outputBytes,
+      filename: epubRes.outputName,
+      targetFormat: 'mobi',
+    });
+    results.push({
+      step: 'EPUB->MOBI',
+      detected: detectFormat(mobiRes.outputBytes, mobiRes.outputName),
+      bytes: mobiRes.outputBytes.length,
+      chapters: mobiRes.stats.chapters,
+    });
+
+    // 3. MOBI -> FB2
+    const fb2Res = await convertBook({
+      bytes: mobiRes.outputBytes,
+      filename: mobiRes.outputName,
+      targetFormat: 'fb2',
+    });
+    results.push({
+      step: 'MOBI->FB2',
+      detected: detectFormat(fb2Res.outputBytes, fb2Res.outputName),
+      bytes: fb2Res.outputBytes.length,
+      chapters: fb2Res.stats.chapters,
+    });
+
+    // 4. FB2 -> PDF
+    const pdfRes = await convertBook({
+      bytes: fb2Res.outputBytes,
+      filename: fb2Res.outputName,
+      targetFormat: 'pdf',
+      options: { pageSize: 'trade', fontFamily: 'serif', fontSize: 11, marginPreset: 'standard', showPageNumbers: true },
+    });
+    results.push({
+      step: 'FB2->PDF',
+      detected: detectFormat(pdfRes.outputBytes, pdfRes.outputName),
+      bytes: pdfRes.outputBytes.length,
+      chapters: pdfRes.stats.chapters,
+    });
+
+    // 5. PDF -> TXT
+    const txtRes = await convertBook({
+      bytes: pdfRes.outputBytes,
+      filename: pdfRes.outputName,
+      targetFormat: 'txt',
+    });
+    const txtStr = new TextDecoder().decode(txtRes.outputBytes);
+    results.push({
+      step: 'PDF->TXT',
+      detected: detectFormat(txtRes.outputBytes, txtRes.outputName),
+      bytes: txtRes.outputBytes.length,
+      hasAlpha: txtStr.includes('Alpha'),
+      hasSecond: txtStr.includes('Second chapter'),
+    });
+
+    // 6. TXT -> HTML
+    const htmlRes = await convertBook({
+      bytes: txtRes.outputBytes,
+      filename: txtRes.outputName,
+      targetFormat: 'html',
+    });
+    results.push({
+      step: 'TXT->HTML',
+      detected: detectFormat(htmlRes.outputBytes, htmlRes.outputName),
+      bytes: htmlRes.outputBytes.length,
+    });
+
+    out.textContent = JSON.stringify({ ok: true, results }, null, 2);
+    console.log('SMOKE_RESULT ' + JSON.stringify({ ok: true, results }));
+  }
+
+  test().catch((err) => {
+    out.textContent = JSON.stringify({ ok: false, error: err.stack || err.message, results }, null, 2);
+    console.error('SMOKE_RESULT ' + out.textContent);
+  });
+</script>
+</body>
+</html>
